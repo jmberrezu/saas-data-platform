@@ -1,7 +1,20 @@
 paths:
-  raw_deliveries: "data/raw/global_mobility_data_entrega_productos.csv"
+  raw: "data/raw"
   bronze: "data/bronze"
   silver: "data/silver"
   gold: "data/gold"
+schemas:
+  deliveries:
+    file_name: "global_mobility_data_entrega_productos.csv"
+    required_columns:
+      - "pais"
+      - "fecha_proceso"
+    tenant_column: "pais"
+    partition_column: "fecha_proceso"
+  materials:
+    file_name: "materials_catalog.csv"
+    required_columns:
+      - "material"
+      - "precio_base"
 execution:
   fail_fast: false # true: aborta, false: continua y reporta
