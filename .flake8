@@ -1,0 +1,6 @@
+[flake8]
+# Ignoramos la regla E501 (líneas de máximo 79 caracteres) porque en PySpark 
+# las cadenas de texto y selects suelen ser más largas. Lo subimos a 100.
+max-line-length = 100
+# Ignoramos directorios que no son nuestro código
+exclude = venv, .git, __pycache__, data

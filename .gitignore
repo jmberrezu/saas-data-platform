@@ -1,0 +1,15 @@
+# Datos
+data/
+
+# Entornos virtuales
+venv/
+.env/
+
+# Archivos de Python
+__pycache__/
+*.pyc
+
+# Databricks / Spark
+spark-warehouse/
+derby.log
+metastore_db/

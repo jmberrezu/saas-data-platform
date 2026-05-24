@@ -1,0 +1,7 @@
+paths:
+  raw_deliveries: "data/raw/global_mobility_data_entrega_productos.csv"
+  bronze: "data/bronze"
+  silver: "data/silver"
+  gold: "data/gold"
+execution:
+  fail_fast: false # true: aborta, false: continua y reporta
