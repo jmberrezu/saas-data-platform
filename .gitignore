@@ -1,15 +1,19 @@
-# Datos
-data/
-
 # Entornos virtuales
 venv/
-.env/
+env/
 
-# Archivos de Python
+# Caché de Python
 __pycache__/
 *.pyc
+*.pytest_cache
 
-# Databricks / Spark
-spark-warehouse/
-derby.log
-metastore_db/
+# Datos locales (¡Nunca subir el Data Lake local a Git!)
+data/
+
+# Bases de datos locales (DuckDB)
+*.db
+*.wal
+
+# Configuración de IDEs
+.vscode/
+.idea/

@@ -2,15 +2,32 @@ paths:
   raw: "data/raw"
   bronze: "data/bronze"
   silver: "data/silver"
+  quarantine_root: "data"
   gold: "data/gold"
+  shared: "data/shared"
 schemas:
   deliveries:
     file_name: "global_mobility_data_entrega_productos.csv"
-    required_columns:
-      - "pais"
-      - "fecha_proceso"
+    required_columns: ["pais", "fecha_proceso"]
     tenant_column: "pais"
     partition_column: "fecha_proceso"
+    silver:
+      quality_rules:
+        cantidad_valida:
+          expr: "cantidad > 0 AND cantidad IS NOT NULL"
+          severity: "warning"
+        precio_valido:
+          expr: "precio >= 0 AND precio IS NOT NULL"
+          severity: "critical"
+        fecha_valida:
+          expr: "fecha_proceso_dt IS NOT NULL"
+          severity: "critical"
+        tipo_entrega_valido:
+          expr: "tipo_entrega IN ('ZPRE', 'ZVE1', 'Z04', 'Z05')"
+          severity: "info" # Esta regla se descarta, no va a cuarentena
+        material_existe:
+          expr: "precio_catalogo_unitario IS NOT NULL"
+          severity: "warning"
   materials:
     file_name: "materials_catalog.csv"
     required_columns:
@@ -18,3 +35,12 @@ schemas:
       - "precio_base"
 execution:
   fail_fast: false # true: aborta, false: continua y reporta
+  tenants:
+    - "ec"
+    - "hn"
+    - "jm"
+    - "sv"
+    - "pe"
+    - "gt"
+quality:
+  fail_on_critical: false
