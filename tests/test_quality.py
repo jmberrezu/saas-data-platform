@@ -1,6 +1,5 @@
 import pytest
 from pyspark.sql import SparkSession
-import pyspark.sql.functions as F
 from src.saas_pipeline.silver.fact_deliveries import evaluate_quality_rules
 from src.saas_pipeline.config import load_config
 
@@ -15,7 +14,7 @@ def spark():
 
 def test_quality_rules_evaluation(spark):
     """
-    PRUEBA 3: Verifica que el motor de calidad detecte correctamente cantidades nulas/negativas 
+    PRUEBA 3: Verifica que el motor de calidad detecte correctamente cantidades nulas/negativas
     y tipos de entrega inválidos evaluando expresiones SQL de configuración.
     """
     # 1. Arrange: Simulamos datos (Mala y Buena)
@@ -48,7 +47,7 @@ def test_yaml_configuration_loads():
     (Cumple explícitamente con el requerimiento de la rúbrica 7.1)
     """
     conf = load_config(tenant="ec")
-    
+
     assert "paths" in conf
     assert "schemas" in conf
     assert "deliveries" in conf.schemas

@@ -36,8 +36,7 @@ def apply_deliveries_transformations(df_bronze):
 
 def apply_scd2_join(df_transformed, df_materials):
     temporal_join_condition = (
-        (df_transformed.material == df_materials.material) &
-        (df_transformed.fecha_proceso_dt.between(
+        (df_transformed.material == df_materials.material) & (df_transformed.fecha_proceso_dt.between(
             df_materials.valid_from, df_materials.valid_to
         ))
     )
@@ -150,23 +149,23 @@ def handle_quarantine(df_bad, quality_rules, quarantine_output_path, tenant):
         if None in unique_values:
             partition_conditions.append("fecha_proceso IS NULL")
 
-        quarantine_replace_cond = f"_tenant_id = '{tenant}' AND ({' OR '.join(partition_conditions)})"
+        quarantine_replace_cond = " OR ".join(partition_conditions)
         write_delta_replace_where(
             df_quarantine_final, quarantine_output_path, quarantine_replace_cond,
-            partition_by=["fecha_proceso", "_tenant_id"], merge_schema=True
+            partition_by=["fecha_proceso"], merge_schema=True
         )
     else:
         logger.info("Capa Silver procesada sin anomalías de cuarentena.")
 
 
-def process_silver_deliveries(tenant: str):
-    conf = load_config(tenant=tenant)
+def process_silver_deliveries(tenant: str, env: str = "dev", start_date: str = None, end_date: str = None):
+    conf = load_config(tenant=tenant, env=env)
     spark = get_spark_session()
 
-    bronze_deliveries_path = f"{conf.paths.bronze}/deliveries"
-    silver_materials_path = f"{conf.paths.silver}/dim_materials"
-    
-    silver_output_path = f"{conf.paths.silver}/fact_deliveries"
+    bronze_deliveries_path = f"{conf.paths.bronze}/{tenant.lower()}/deliveries"
+    silver_materials_path = f"{conf.paths.silver}/global/dim_materials"
+
+    silver_output_path = f"{conf.paths.silver}/{tenant.lower()}/fact_deliveries"
     quarantine_output_path = f"{conf.paths.quarantine_root}/silver_quarantine/{tenant.lower()}/fact_deliveries"
 
     _run_id = str(uuid.uuid4())
@@ -183,9 +182,17 @@ def process_silver_deliveries(tenant: str):
         raise RuntimeError(error_msg)
 
     try:
-        df_bronze = spark.read.format("delta").load(bronze_deliveries_path) \
-                    .filter(F.col("_tenant_id") == tenant.lower()) \
-                    .dropDuplicates()
+        df_bronze = (
+            spark.read.format("delta").load(bronze_deliveries_path)
+            .filter(F.col("_tenant_id") == tenant.lower())
+        )
+
+        if start_date:
+            df_bronze = df_bronze.filter(F.col("fecha_proceso").cast("string") >= start_date.replace("-", ""))
+        if end_date:
+            df_bronze = df_bronze.filter(F.col("fecha_proceso").cast("string") <= end_date.replace("-", ""))
+
+        df_bronze = df_bronze.dropDuplicates()
         df_materials = spark.read.format("delta").load(silver_materials_path)
     except Exception as e:
         logger.error(f"Error al leer orígenes en Silver: {e}")
@@ -208,14 +215,14 @@ def process_silver_deliveries(tenant: str):
     )
     df_bad = df_evaluated.filter(~is_apt_for_silver_cond)
 
-    # --- ORDENAMIENTO ESTÁNDAR DE COLUMNAS PARA HUMANOS ---
+    # --- ORDENAMIENTO ESTÁNDAR DE COLUMNAS ---
     cols_llaves = ["_tenant_id", "fecha_proceso", "transporte", "ruta", "material", "tipo_entrega"]
     cols_auditoria = [c for c in df_silver_final.columns if c.startswith("_") and not c.startswith("_rule_") and c not in cols_llaves]
     cols_metricas = [
-        c for c in df_silver_final.columns 
+        c for c in df_silver_final.columns
         if c not in cols_llaves + cols_auditoria and not c.startswith("_rule_") and c != "fecha_proceso_dt"
     ]
-    
+
     df_silver_clean = df_silver_final.select(*(cols_llaves + cols_metricas + cols_auditoria))
 
     logger.info("Escribiendo datos procesados en fact_deliveries mediante MERGE...")
@@ -225,7 +232,7 @@ def process_silver_deliveries(tenant: str):
         "target.material = source.material AND target.tipo_entrega = source.tipo_entrega"
     )
     write_delta_merge(
-        spark, df_silver_clean, silver_output_path, merge_condition, ["fecha_proceso", "_tenant_id"]
+        spark, df_silver_clean, silver_output_path, merge_condition, ["fecha_proceso"]
     )
 
     handle_quarantine(df_bad, quality_rules, quarantine_output_path, tenant)
@@ -241,5 +248,8 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Procesamiento Capa Silver - Entregas")
     parser.add_argument("--tenant", type=str, required=True, help="Código del tenant (ej. ec)")
+    parser.add_argument("--env", type=str, default="dev", help="Entorno de ejecución (dev, qa, main)")
+    parser.add_argument("--start-date", type=str, help="Fecha de inicio (YYYY-MM-DD)")
+    parser.add_argument("--end-date", type=str, help="Fecha de fin (YYYY-MM-DD)")
     args = parser.parse_args()
-    process_silver_deliveries(tenant=args.tenant)
+    process_silver_deliveries(tenant=args.tenant, env=args.env, start_date=args.start_date, end_date=args.end_date)

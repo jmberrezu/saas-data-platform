@@ -19,9 +19,9 @@ def get_spark_session():
         .getOrCreate()
 
 
-def process_bronze(tenant: str, entity: str):
+def process_bronze(tenant: str, entity: str, env: str = "dev", start_date: str = None, end_date: str = None):
     # --- CONFIGURACIÓN Y RUTAS ---
-    conf = load_config(tenant=tenant)
+    conf = load_config(tenant=tenant, env=env)
     spark = get_spark_session()
 
     if entity not in conf.schemas:
@@ -30,7 +30,7 @@ def process_bronze(tenant: str, entity: str):
     entity_conf = conf.schemas[entity]
 
     raw_path = f"{conf.paths.raw}/{entity_conf.file_name}"
-    bronze_path = f"{conf.paths.bronze}/{entity}"
+    bronze_path = f"{conf.paths.bronze}/{tenant.lower()}/{entity}"
 
     logger.info(
         f"Iniciando procesamiento Bronze para el tenant: {tenant.upper()} | "
@@ -56,6 +56,16 @@ def process_bronze(tenant: str, entity: str):
             logger.error(f"{error_msg} -> Omitiendo archivo debido a fail_fast=False")
             return
 
+    # --- FILTRADO POR RANGO DE FECHAS (Req 3) ---
+    partition_column = entity_conf.get("partition_column", None)
+    if partition_column and (start_date or end_date):
+        if start_date:
+            sd_formatted = start_date.replace("-", "")
+            df_raw = df_raw.filter(F.col(partition_column).cast("string") >= sd_formatted)
+        if end_date:
+            ed_formatted = end_date.replace("-", "")
+            df_raw = df_raw.filter(F.col(partition_column).cast("string") <= ed_formatted)
+
     # --- ENRIQUECIMIENTO Y AISLAMIENTO DE TENANT ---
     batch_id = str(uuid.uuid4())
     source_tenant_column = entity_conf.get("tenant_column", None)
@@ -77,7 +87,6 @@ def process_bronze(tenant: str, entity: str):
     )
 
     # --- ESCRITURA EN DELTA E IDEMPOTENCIA ---
-    partition_column = entity_conf.get("partition_column", None)
 
     if partition_column:
         # Estrategia replaceWhere: Sobrescribe únicamente las particiones presentes en este lote
@@ -103,15 +112,13 @@ def process_bronze(tenant: str, entity: str):
 
         partition_filter = " OR ".join(partition_conditions)
 
-        replace_condition = f"_tenant_id = '{tenant}' AND ({partition_filter})"
-
-        logger.info(f"Escribiendo en Delta con condición (Idempotencia): {replace_condition}")
+        logger.info(f"Escribiendo en Delta con condición (Idempotencia): {partition_filter}")
 
         write_delta_replace_where(
             df_bronze,
             bronze_path,
-            replace_condition,
-            partition_by=[partition_column, "_tenant_id"],
+            partition_filter,
+            partition_by=[partition_column],
             merge_schema=True
         )
     else:
@@ -126,5 +133,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Procesamiento Capa Bronze")
     parser.add_argument("--tenant", type=str, required=True, help="Código del tenant (ej. ec)")
     parser.add_argument("--entity", type=str, required=True, help="Entidad a procesar (ej. deliveries)")
+    parser.add_argument("--env", type=str, default="dev", help="Entorno de ejecución (dev, qa, main)")
+    parser.add_argument("--start-date", type=str, help="Fecha de inicio (YYYY-MM-DD)")
+    parser.add_argument("--end-date", type=str, help="Fecha de fin (YYYY-MM-DD)")
     args = parser.parse_args()
-    process_bronze(tenant=args.tenant, entity=args.entity)
+    process_bronze(tenant=args.tenant, entity=args.entity, env=args.env, start_date=args.start_date, end_date=args.end_date)

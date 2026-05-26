@@ -8,12 +8,12 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 
-def process_silver_materials(env: str = "dev"):
+def process_silver_materials():
     """
     Carga el catálogo dim_materials respetando el formato SCD2 del origen,
     asegurando tipos de datos y garantizando idempotencia mediante MERGE.
     """
-    conf = load_config(tenant="base", env=env)
+    conf = load_config(tenant="base")
     spark = get_spark_session()
 
     bronze_path = f"{conf.paths.bronze}/global/materials"
@@ -43,8 +43,4 @@ def process_silver_materials(env: str = "dev"):
 
 
 if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser(description="Procesamiento Capa Silver - Materiales")
-    parser.add_argument("--env", type=str, default="dev", help="Entorno de ejecución (dev, qa, main)")
-    args = parser.parse_args()
-    process_silver_materials(env=args.env)
+    process_silver_materials()

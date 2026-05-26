@@ -2,6 +2,16 @@
 
 ## 1. Decisiones arquitectónicas con las que no estoy de acuerdo
 
+**1. Descartes silenciosos vs. Cuarentena Integral:**
+* **Decisión provista:** La sección 5.6 instruye que los registros con `tipo_entrega` fuera de las 4 válidas deben descartarse (contabilizarse en métricas, pero no persistirse).
+* **Desacuerdo:** En arquitecturas de gobierno de datos estricto, la pérdida física de datos imposibilita el análisis de causa raíz (*Root Cause Analysis*). Si un proveedor cambia su sistema y empieza a enviar cientos de códigos `Z99`, un analista no sabrá a qué fechas, rutas o transportes correspondían esos descartes porque fueron borrados de la plataforma.
+* **Propuesta alternativa y Trade-offs:** Mi propuesta es enviar **todos** los datos anómalos a la tabla de Cuarentena, pero inyectando una columna de metadatos `acción_tomada` (ej. `quarantine` vs `discarded`). El trade-off principal es un ligero aumento en los costos de almacenamiento (Storage) para la tabla paralela, a cambio de maximizar la observabilidad, la trazabilidad y la resolución colaborativa de problemas con el negocio.
+
+**2. Implementación nativa de SCD Type 2 en la Capa Silver:**
+* **Decisión provista:** El catálogo de materiales se procesa y une en Silver como SCD Type 2 usando un `JOIN` temporal en cada ejecución.
+* **Desacuerdo:** Ejecutar un *Left Join* con evaluación de rangos temporales (`BETWEEN valid_from AND valid_to`) en cada micro-batch o procesamiento diario en la tabla transaccional (Hechos) es computacionalmente muy costoso (*Compute-Heavy*) en Spark.
+* **Propuesta alternativa y Trade-offs:** Implementar la tabla de materiales como una "Dimensión de Instantánea" (*Snapshot Dimension Table*) o pre-materializar las versiones en un *Feature Store*. El trade-off es sacrificar un poco la normalización del almacenamiento para ahorrar costos masivos de cómputo en el *cluster* de Databricks durante los cruces diarios.
+
 ## 2. Ambigüedades en la arquitectura y su resolución
 
 **1. Nomenclatura Lógica vs. Física en Cuarentena:**
@@ -9,6 +19,15 @@
 * **Resolución:** Se interpretó la sección 5.6 como la convención de nomenclatura lógica para Unity Catalog / Hive Metastore (donde `silver_quarantine_ec` es el *Schema* y `fact_deliveries` es la *Tabla*). Por lo tanto, físicamente en el disco local se implementó de forma estricta la estructura jerárquica de la sección 5.2 (`data/silver_quarantine/ec/fact_deliveries`), preparándola para un mapeo directo (`LOCATION`) a tablas externas en el entorno Cloud.
 
 ## 3. Mejoras tecnológicas para próximas iteraciones (Horizonte 2-3)
+
+**1. Evolución a Streaming (Databricks Auto Loader):**
+* Migrar la ingesta *batch* de la capa Bronze hacia un flujo continuo estructurado utilizando **Auto Loader** (`cloudFiles`). Esto eliminará la necesidad de orquestadores externos programados por lotes y permitirá a la plataforma reaccionar de forma incremental a la llegada de cada nuevo archivo CSV de los proveedores en tiempo real.
+
+**2. Calidad de Datos Declarativa (Delta Live Tables - DLT):**
+* En lugar de mantener un motor de validación Custom con PySpark puro (*Dataframes y withColumn*), el pipeline debería refactorizarse hacia Databricks DLT utilizando `Expectations` (ej. `@dlt.expect_all_or_drop`). DLT abstrae el manejo de cuarentenas, genera tableros de observabilidad de calidad de datos automáticos y gestiona los reintentos de forma nativa.
+
+**3. Gobierno Universal con Unity Catalog:**
+* Sustituir el aislamiento físico simulado de carpetas por una integración total con **Unity Catalog**. Implementar esquemas manejados (`saas_prod.silver_gt.fact_deliveries`), habilitando políticas de acceso por filas (Row-Level Security), enmascaramiento dinámico de columnas PII y un linaje automático de extremo a extremo visible desde la UI de Databricks.
 
 ## 4. Diseño y Decisiones Arquitectónicas Implementadas (Capa Bronze)
 
@@ -46,9 +65,9 @@
 * **Decisión:** Todas las funciones de PySpark se importan usando el alias estándar de la industria (`import pyspark.sql.functions as F`).
 * **Por qué:** Evita colisiones de nombres (*Namespace Collisions*) con funciones nativas de Python como `sum()`, `max()`, o `min()`, dejando el código limpio, explícito y previniendo errores de ejecución difíciles de rastrear.
 
-**4. Aislamiento Físico de la Cuarentena (Multi-tenant):**
-* **Decisión:** La cuarentena se escribe dinámicamente en la ruta `<layer>_quarantine_<tenant>/<table>` (ej. `silver_quarantine_ec/deliveries`) en lugar de una carpeta global.
-* **Por qué:** Cumple el requerimiento de aislamiento por *tenant* y capa (Regla 5.6). Al usar prefijos físicos simulando bases de datos, permitimos configurar políticas de retención y accesos de seguridad a nivel de país sin mezclar datos corruptos de distintos inquilinos.
+**4. Aislamiento Físico Estricto por Tenant (Multi-tenant):**
+* **Decisión:** Las capas Bronze, Silver y Gold se escriben dinámicamente en rutas que incluyen el tenant explícitamente (`data/<layer>/<tenant>/<table>/`) y se eliminó el particionamiento por `_tenant_id`.
+* **Por qué:** Cumple estrictamente con el requerimiento de aislamiento físico de la sección 5.2. Al separar los datos en carpetas raíz por tenant, se delega el aislamiento a la estructura de directorios (preparándolo para el esquema de Unity Catalog) en lugar de depender únicamente del particionamiento interno de Delta Lake. Esto resuelve de forma elegante la ambigüedad interpretativa con la sección 5.4.
 
 **5. Capa de Abstracción de Datos (I/O Utilities):**
 * **Decisión:** Toda la lógica de escritura física en Delta Lake (`MERGE`, `replaceWhere`, `append`) se extrajo a un módulo genérico de utilidades (`utils.py`).

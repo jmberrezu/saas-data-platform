@@ -1,6 +1,5 @@
 import pytest
 from pyspark.sql import SparkSession
-import pyspark.sql.functions as F
 from datetime import date
 from src.saas_pipeline.silver.fact_deliveries import apply_deliveries_transformations, apply_scd2_join
 
@@ -16,7 +15,7 @@ def spark():
 
 def test_conversion_unidades_y_flags(spark):
     """
-    PRUEBA 1: Verifica la normalización de unidades (1 CS = 20 ST) 
+    PRUEBA 1: Verifica la normalización de unidades (1 CS = 20 ST)
     y el mapeo correcto de los flags de tipo de entrega.
     """
     # 1. Arrange: Datos simulados crudos
