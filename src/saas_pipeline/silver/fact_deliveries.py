@@ -52,11 +52,11 @@ def evaluate_quality_rules(df, quality_rules):
 
     for rule_name, rule_config in quality_rules.items():
         if hasattr(rule_config, 'expr'):
-            sql_expression = rule_config.expr
+            sql_expression = rule_config.expr  # Para obtener del yaml
         else:
-            sql_expression = rule_config['expr']
+            sql_expression = rule_config['expr']  # Para obtener de pruebas unitarias
         df_evaluated = df_evaluated.withColumn(f"_rule_{rule_name}", F.expr(sql_expression))
-        is_apt_for_silver_cond = is_apt_for_silver_cond & F.col(f"_rule_{rule_name}")
+        is_apt_for_silver_cond = is_apt_for_silver_cond & F.col(f"_rule_{rule_name}")  # A nivel de registro, por todas las reglas
 
     return df_evaluated, is_apt_for_silver_cond
 
@@ -78,9 +78,9 @@ def record_quality_logs(spark, df_evaluated, quality_rules, _run_id, tenant, log
 
         for rule_name, rule_config in quality_rules.items():
             if hasattr(rule_config, 'severity'):
-                severity = rule_config.severity
+                severity = rule_config.severity  # Para obtener del yaml
             else:
-                severity = rule_config.get('severity', 'info')
+                severity = rule_config.get('severity', 'info')  # Para obtener de pruebas unitarias
 
             failures = failure_counts[f"fails_{rule_name}"]
 
@@ -210,10 +210,10 @@ def process_silver_deliveries(tenant: str, env: str = "dev", start_date: str = N
     )
 
     df_silver_final = (
-        df_evaluated.filter(is_apt_for_silver_cond)
+        df_evaluated.filter(is_apt_for_silver_cond)  # Solo registros que cumplen todas las reglas de calidad
         .withColumn("_silver_timestamp", F.current_timestamp())
     )
-    df_bad = df_evaluated.filter(~is_apt_for_silver_cond)
+    df_bad = df_evaluated.filter(~is_apt_for_silver_cond)  # Registros que no cumplen alguna regla de calidad, para análisis y cuarentena
 
     # --- ORDENAMIENTO ESTÁNDAR DE COLUMNAS ---
     cols_llaves = ["_tenant_id", "fecha_proceso", "transporte", "ruta", "material", "tipo_entrega"]

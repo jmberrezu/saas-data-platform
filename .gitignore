@@ -17,3 +17,6 @@ data/
 # Configuración de IDEs
 .vscode/
 .idea/
+
+# backups y archivos temporales
+*.bkp
